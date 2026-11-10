@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#8b0015" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Taft Eligibility Checkpoint</title>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    :root{--red:#8b0015;--gold:#d9a514;--black:#151515;--bg:#f5f5f5;--card:#fff;--ok:#197a3b;--bad:#b3261e;--muted:#6b7280}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:#111}
+    header{background:var(--black);color:#fff;padding:14px 18px;border-bottom:5px solid var(--gold);position:sticky;top:0;z-index:5}
+    header h1{font-size:1.1rem;margin:0}.sub{font-size:.8rem;color:#ddd;margin-top:3px}
+    nav{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:8px;background:#fff;position:sticky;top:63px;z-index:4;border-bottom:1px solid #ddd}
+    nav button{border:0;border-radius:10px;padding:10px 4px;background:#eee;font-weight:700;font-size:.78rem}nav button.active{background:var(--red);color:#fff}
+    main{max-width:900px;margin:0 auto;padding:14px}.view{display:none}.view.active{display:block}
+    .card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:14px;box-shadow:0 2px 10px #0001}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+    input,select,button{font:inherit}input,select{width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;background:#fff}
+    button{cursor:pointer}.primary{background:var(--red);color:#fff;border:0;border-radius:10px;padding:12px 14px;font-weight:800}.secondary{background:#fff;border:1px solid #bbb;border-radius:10px;padding:12px 14px;font-weight:700}.danger{background:var(--bad);color:#fff;border:0;border-radius:10px;padding:12px 14px;font-weight:800}
+    .scanbox{text-align:center;padding:24px}.scanbox input{font-size:1.35rem;text-align:center;font-weight:800}.result{margin-top:14px;padding:24px;border-radius:16px;background:#eee;min-height:150px;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:.2s}.result.ok{background:#daf3e2}.result.bad{background:#f8d7d4}.result.neutral{background:#eee}.big{font-size:2rem;font-weight:900}.name{font-size:1.3rem;font-weight:800;margin-top:4px}.small{font-size:.85rem;color:var(--muted)}
+    table{width:100%;border-collapse:collapse;font-size:.9rem}th,td{text-align:left;padding:9px;border-bottom:1px solid #eee}th{background:#fafafa;position:sticky;top:110px}.pill{display:inline-block;padding:3px 8px;border-radius:999px;font-size:.75rem;font-weight:800}.pill.ok{background:#dff5e5;color:#14532d}.pill.bad{background:#fde2e0;color:#7f1d1d}
+    .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}.spacer{flex:1}.notice{padding:10px 12px;border-left:4px solid var(--gold);background:#fff7db;border-radius:8px;font-size:.9rem}.status{font-size:.85rem;color:var(--muted)}
+    #flash{position:fixed;inset:0;pointer-events:none;opacity:0;z-index:999;transition:opacity .08s}#flash.ok{background:#19a34a}#flash.bad{background:#d11f16}
+    video{width:100%;border-radius:14px;background:#000;max-height:420px}.cameraWrap{display:none}.cameraWrap.active{display:block}
+    @media(max-width:600px){main{padding:10px}.card{padding:13px}nav{top:63px}.big{font-size:1.6rem}th{top:110px}}
+  </style>
+</head>
+<body>
+<div id="flash"></div>
+<header><h1>Taft Eligibility Checkpoint</h1><div class="sub">Local-only student roster • data stays on this device</div></header>
+<nav>
+  <button data-view="scan" class="active">Scan</button><button data-view="students">Students</button><button data-view="import">Import / Update</button><button data-view="history">History</button>
+</nav>
+<main>
+<section id="scan" class="view active">
+  <div class="card scanbox">
+    <h2>Scan Student ID</h2>
+    <input id="scanInput" inputmode="numeric" autocomplete="off" placeholder="Scan or type ID, then Enter" autofocus />
+    <div class="toolbar" style="justify-content:center"><button id="cameraBtn" class="secondary">Use Camera</button></div>
+    <div id="cameraWrap" class="cameraWrap"><video id="video" playsinline></video><div class="toolbar" style="justify-content:center"><button id="stopCamera" class="secondary">Stop Camera</button></div></div>
+    <div id="result" class="result neutral"><div class="big">Ready</div><div class="small">Roster: <span id="rosterCount">0</span> students</div></div>
+  </div>
+  <div class="card"><h3>Recent scans</h3><div id="recent"></div></div>
+</section>
+
+<section id="students" class="view">
+  <div class="card">
+    <div class="toolbar"><h2 style="margin:0">Students</h2><div class="spacer"></div><button id="addStudentBtn" class="primary">Add Student</button></div>
+    <input id="studentSearch" placeholder="Search name or student ID" />
+    <div class="status" style="margin-top:8px">Last roster update: <span id="lastUpdated">Never</span></div>
+  </div>
+  <div class="card" style="overflow:auto"><table><thead><tr><th>Last</th><th>First</th><th>ID</th><th>Status</th><th></th></tr></thead><tbody id="studentRows"></tbody></table></div>
+</section>
+
+<section id="import" class="view">
+  <div class="card"><h2>Import or Update Roster</h2>
+    <div class="notice">Expected columns: <b>Last Name</b>, <b>First Name</b>, <b>Student ID</b>, <b>Status</b>. CSV works fully offline. XLSX import uses the bundled webpage library when available.</div>
+    <div style="margin-top:12px"><input type="file" id="fileInput" accept=".csv,.xlsx,.xls" /></div>
+    <div class="toolbar"><button id="replaceBtn" class="danger">Replace Roster</button><button id="mergeBtn" class="primary">Merge / Update</button></div>
+    <div id="importMsg" class="status"></div>
+  </div>
+  <div class="card"><h3>Backup</h3><p class="small">Export the locally stored roster before making major changes.</p><button id="exportRoster" class="secondary">Export Roster CSV</button></div>
+  <div class="card"><h3>Privacy</h3><p class="small">Student records are stored in this browser's IndexedDB database. This app does not send roster or scan data to a server.</p></div>
+</section>
+
+<section id="history" class="view">
+  <div class="card"><div class="toolbar"><h2 style="margin:0">Scan History</h2><div class="spacer"></div><button id="exportHistory" class="secondary">Download CSV</button><button id="clearHistory" class="danger">Clear History</button></div><input id="historySearch" placeholder="Search history" /></div>
+  <div class="card" style="overflow:auto"><table><thead><tr><th>Date/Time</th><th>Name</th><th>ID</th><th>Status</th></tr></thead><tbody id="historyRows"></tbody></table></div>
+</section>
+</main>
+
+<dialog id="studentDialog">
+<form method="dialog" id="studentForm" style="min-width:min(92vw,420px)"><h3 id="dlgTitle">Student</h3>
+  <input id="dlgLast" placeholder="Last Name" required style="margin-bottom:8px" />
+  <input id="dlgFirst" placeholder="First Name" required style="margin-bottom:8px" />
+  <input id="dlgId" placeholder="Student ID" required style="margin-bottom:8px" />
+  <select id="dlgStatus" style="margin-bottom:12px"><option>Approved</option><option>Denied</option></select>
+  <div class="toolbar"><button value="cancel" class="secondary">Cancel</button><div class="spacer"></div><button id="saveStudent" value="default" class="primary">Save</button></div>
+</form></dialog>
+
+<script>
+const DB='taftEligibilityDB', VER=1; let db, editId=null, cameraStream=null, scanLoop=null;
+function openDB(){return new Promise((res,rej)=>{const r=indexedDB.open(DB,VER);r.onupgradeneeded=e=>{const d=e.target.result;if(!d.objectStoreNames.contains('students'))d.createObjectStore('students',{keyPath:'id'});if(!d.objectStoreNames.contains('history'))d.createObjectStore('history',{keyPath:'key',autoIncrement:true});if(!d.objectStoreNames.contains('meta'))d.createObjectStore('meta',{keyPath:'key'});};r.onsuccess=()=>{db=r.result;res()};r.onerror=()=>rej(r.error)})}
+function store(name,mode='readonly'){return db.transaction(name,mode).objectStore(name)}
+function getAll(name){return new Promise((res,rej)=>{const r=store(name).getAll();r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function getOne(name,key){return new Promise((res,rej)=>{const r=store(name).get(key);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})}
+function put(name,val){return new Promise((res,rej)=>{const r=store(name,'readwrite').put(val);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function add(name,val){return new Promise((res,rej)=>{const r=store(name,'readwrite').add(val);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function del(name,key){return new Promise((res,rej)=>{const r=store(name,'readwrite').delete(key);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+function clearStore(name){return new Promise((res,rej)=>{const r=store(name,'readwrite').clear();r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})}
+const norm=s=>String(s??'').trim();
+const statusNorm=s=>/^denied$/i.test(norm(s))?'Denied':'Approved';
+async function setUpdated(){await put('meta',{key:'lastUpdated',value:new Date().toISOString()});refreshMeta()}
+async function refreshMeta(){const m=await getOne('meta','lastUpdated');document.getElementById('lastUpdated').textContent=m?new Date(m.value).toLocaleString():'Never'}
+async function refreshCounts(){document.getElementById('rosterCount').textContent=(await getAll('students')).length}
+function esc(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+async function scan(id){id=norm(id);if(!id)return;const student=await getOne('students',id);let status,name;
+ if(student){status=student.status;name=`${student.first} ${student.last}`.trim()}else{status='Approved';name='ID not found'}
+ await add('history',{ts:new Date().toISOString(),id,name,status});showResult(student,status,name,id);refreshHistory();refreshRecent();document.getElementById('scanInput').value='';}
+function showResult(student,status,name,id){const result=document.getElementById('result'),ok=status==='Approved';result.className='result '+(ok?'ok':'bad');result.innerHTML=`<div class="big">${ok?'APPROVED':'DENIED'}</div><div class="name">${esc(name)}</div><div class="small">${esc(id)}</div>`;flash(ok?'ok':'bad');tone(ok);setTimeout(()=>{result.className='result neutral'},1400)}
+function flash(cls){const f=document.getElementById('flash');f.className=cls;f.style.opacity='.38';setTimeout(()=>f.style.opacity='0',180);setTimeout(()=>f.className='',300)}
+function tone(ok){try{const C=window.AudioContext||window.webkitAudioContext,c=new C(),o=c.createOscillator(),g=c.createGain();o.frequency.value=ok?880:220;g.gain.setValueAtTime(.08,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+.18);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+.2)}catch(e){}}
+async function refreshRecent(){const rows=(await getAll('history')).slice(-6).reverse();document.getElementById('recent').innerHTML=rows.length?rows.map(r=>`<div style="padding:8px 0;border-bottom:1px solid #eee"><b>${esc(r.name)}</b> · ${esc(r.id)} <span class="pill ${r.status==='Approved'?'ok':'bad'}">${r.status}</span><div class="small">${new Date(r.ts).toLocaleString()}</div></div>`).join(''):'<div class="small">No scans yet.</div>'}
+async function refreshStudents(){const q=norm(document.getElementById('studentSearch').value).toLowerCase();let rows=await getAll('students');rows.sort((a,b)=>(a.last+a.first).localeCompare(b.last+b.first));if(q)rows=rows.filter(s=>`${s.last} ${s.first} ${s.id}`.toLowerCase().includes(q));document.getElementById('studentRows').innerHTML=rows.map(s=>`<tr><td>${esc(s.last)}</td><td>${esc(s.first)}</td><td>${esc(s.id)}</td><td><span class="pill ${s.status==='Approved'?'ok':'bad'}">${s.status}</span></td><td><button class="secondary" onclick="editStudent('${encodeURIComponent(s.id)}')">Edit</button></td></tr>`).join('')}
+async function refreshHistory(){const q=norm(document.getElementById('historySearch').value).toLowerCase();let rows=(await getAll('history')).reverse();if(q)rows=rows.filter(r=>`${r.name} ${r.id} ${r.status}`.toLowerCase().includes(q));document.getElementById('historyRows').innerHTML=rows.map(r=>`<tr><td>${new Date(r.ts).toLocaleString()}</td><td>${esc(r.name)}</td><td>${esc(r.id)}</td><td><span class="pill ${r.status==='Approved'?'ok':'bad'}">${r.status}</span></td></tr>`).join('')}
+async function parseFile(file){const ext=file.name.split('.').pop().toLowerCase();if(ext==='csv'){return parseCSV(await file.text())}if(!window.XLSX)throw new Error('Excel parser is unavailable. Save the file as CSV and try again.');const data=await file.arrayBuffer();const wb=XLSX.read(data);const ws=wb.Sheets[wb.SheetNames[0]];return XLSX.utils.sheet_to_json(ws,{defval:''})}
+function parseCSV(text){const rows=[];let row=[],field='',q=false;for(let i=0;i<text.length;i++){const c=text[i],n=text[i+1];if(c==='"'){if(q&&n==='"'){field+='"';i++}else q=!q}else if(c===','&&!q){row.push(field);field=''}else if((c==='\n'||c==='\r')&&!q){if(c==='\r'&&n==='\n')i++;row.push(field);if(row.some(x=>x!==''))rows.push(row);row=[];field=''}else field+=c}row.push(field);if(row.some(x=>x!==''))rows.push(row);if(!rows.length)return[];const h=rows.shift().map(x=>x.trim());return rows.map(r=>Object.fromEntries(h.map((x,i)=>[x,r[i]??''])))}
+function mapRows(raw){return raw.map(r=>{const keys=Object.keys(r);const find=(names)=>{for(const n of names){const k=keys.find(k=>k.trim().toLowerCase()===n);if(k!=null)return r[k]}return''};return{last:norm(find(['last name','lastname','last'])),first:norm(find(['first name','firstname','first'])),id:norm(find(['student id','studentid','id'])),status:statusNorm(find(['status','approved/denied','eligibility']))}}).filter(s=>s.id)}
+async function importRoster(mode){const file=document.getElementById('fileInput').files[0],msg=document.getElementById('importMsg');if(!file){msg.textContent='Choose a CSV or Excel file first.';return}try{const data=mapRows(await parseFile(file));if(!data.length)throw new Error('No student IDs were found. Check the column headings.');if(mode==='replace'&&!confirm(`Replace the current roster with ${data.length} students? Scan history will NOT be deleted.`))return;if(mode==='replace')await clearStore('students');for(const s of data)await put('students',s);await setUpdated();await refreshCounts();await refreshStudents();msg.textContent=`${mode==='replace'?'Replaced':'Updated'} roster with ${data.length} records.`}catch(e){msg.textContent='Import failed: '+e.message}}
+function csvCell(v){v=String(v??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+function download(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv'}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
+async function exportRoster(){const rows=await getAll('students');const csv=['Last Name,First Name,Student ID,Status',...rows.map(s=>[s.last,s.first,s.id,s.status].map(csvCell).join(','))].join('\n');download('taft_roster_backup.csv',csv)}
+async function exportHistory(){const rows=await getAll('history');const csv=['Date/Time,Name,Student ID,Status',...rows.map(r=>[new Date(r.ts).toLocaleString(),r.name,r.id,r.status].map(csvCell).join(','))].join('\n');download('taft_scan_history.csv',csv)}
+window.editStudent=async enc=>{editId=decodeURIComponent(enc);const s=await getOne('students',editId);document.getElementById('dlgTitle').textContent='Edit Student';dlgLast.value=s.last;dlgFirst.value=s.first;dlgId.value=s.id;dlgStatus.value=s.status;studentDialog.showModal()}
+async function saveStudentForm(e){e.preventDefault();const s={last:norm(dlgLast.value),first:norm(dlgFirst.value),id:norm(dlgId.value),status:dlgStatus.value};if(!s.id)return;if(editId&&editId!==s.id)await del('students',editId);await put('students',s);editId=null;studentDialog.close();await setUpdated();refreshCounts();refreshStudents()}
+async function startCamera(){if(!('BarcodeDetector'in window)){alert('Camera barcode scanning is not supported in this browser. An attached scanner or manual ID entry will still work.');return}try{cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});video.srcObject=cameraStream;await video.play();cameraWrap.classList.add('active');const detector=new BarcodeDetector({formats:['code_128','code_39','ean_13','qr_code']});let last='';scanLoop=setInterval(async()=>{try{const codes=await detector.detect(video);if(codes.length&&codes[0].rawValue&&codes[0].rawValue!==last){last=codes[0].rawValue;await scan(last);setTimeout(()=>last='',1500)}}catch(e){}},350)}catch(e){alert('Unable to access camera: '+e.message)}}
+function stopCamera(){if(scanLoop)clearInterval(scanLoop);scanLoop=null;if(cameraStream)cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;cameraWrap.classList.remove('active')}
+
+document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.getElementById(b.dataset.view).classList.add('active');if(b.dataset.view==='scan')setTimeout(()=>scanInput.focus(),50)})
+scanInput.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();scan(scanInput.value)}});studentSearch.oninput=refreshStudents;historySearch.oninput=refreshHistory;replaceBtn.onclick=()=>importRoster('replace');mergeBtn.onclick=()=>importRoster('merge');exportRoster.onclick=exportRoster;exportHistory.onclick=exportHistory;clearHistory.onclick=async()=>{if(confirm('Permanently clear scan history on this device?')){await clearStore('history');refreshHistory();refreshRecent()}};addStudentBtn.onclick=()=>{editId=null;dlgTitle.textContent='Add Student';dlgLast.value='';dlgFirst.value='';dlgId.value='';dlgStatus.value='Approved';studentDialog.showModal()};studentForm.addEventListener('submit',saveStudentForm);cameraBtn.onclick=startCamera;stopCamera.onclick=stopCamera;
+
+openDB().then(async()=>{await refreshCounts();await refreshStudents();await refreshHistory();await refreshRecent();await refreshMeta();if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});}).catch(e=>alert('Unable to initialize local database: '+e.message));
+</script>
+</body></html>
